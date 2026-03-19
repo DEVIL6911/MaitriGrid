@@ -1,0 +1,230 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  Switch,
+  Dimensions,
+  ActivityIndicator,
+  RefreshControl,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { LineChart } from 'react-native-chart-kit';
+import { COLORS, SIZES, SHADOWS } from '../constants/theme';
+import { useAuth } from '../context/AuthContext';
+import { energyAPI } from '../services/api';
+
+const screenWidth = Dimensions.get('window').width;
+
+const DashboardScreen = ({ navigation }) => {
+  const { user } = useAuth();
+  const [isSolar, setIsSolar] = useState(true);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [stats, setStats] = useState({
+    total_kwh: 0, consumed_kwh: 0, capacity_kwh: 0, surplus_kwh: 0, usage_percent: 0,
+  });
+  const [history, setHistory] = useState({ total_generated: 0, data: [] });
+
+  const fetchData = useCallback(async () => {
+    try {
+      const [statsData, historyData] = await Promise.all([
+        energyAPI.getStats(),
+        energyAPI.getHistory(),
+      ]);
+      setStats(statsData);
+      setHistory(historyData);
+    } catch (e) {
+      console.log('Dashboard fetch error:', e.message);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchData();
+  };
+
+  const today = new Date();
+  const dateStr = today.toLocaleDateString('en-US', {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+  });
+
+  const STATS = [
+    { label: 'Total Energy', value: stats.total_kwh.toFixed(1), unit: 'Kwh', icon: 'flash-outline', color: COLORS.primary },
+    { label: 'Consumed', value: stats.consumed_kwh.toFixed(1), unit: 'Kwh', icon: 'battery-half-outline', color: '#F59E0B' },
+    { label: 'Capacity', value: stats.capacity_kwh.toFixed(1), unit: 'Kwh', icon: 'reload-outline', color: '#6366F1' },
+    { label: 'Surplus Energy', value: stats.surplus_kwh.toFixed(1), unit: 'Kwh', icon: 'trending-up-outline', color: '#10B981' },
+  ];
+
+  const chartLabels = history.data.length > 0
+    ? history.data.map((d) => d.time)
+    : ['1AM', '5AM', '9AM', '1PM', '5PM', '9PM'];
+
+  const chartData = history.data.length > 0
+    ? history.data.map((d) => d.kwh)
+    : [20, 45, 28, 80, 99, 43];
+
+  if (loading) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView
+      style={styles.container}
+      showsVerticalScrollIndicator={false}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.primary]} />}
+    >
+      {/* Header */}
+      <View style={styles.header}>
+        <View>
+          <Text style={styles.greeting}>Hi {user?.name || 'User'}</Text>
+          <Text style={styles.date}>{dateStr}</Text>
+        </View>
+        <View style={styles.toggleContainer}>
+          <Switch
+            value={isSolar}
+            onValueChange={setIsSolar}
+            trackColor={{ false: COLORS.grayLight, true: COLORS.primaryLight }}
+            thumbColor={isSolar ? COLORS.primary : COLORS.gray}
+          />
+          <Text style={styles.toggleLabel}>
+            {isSolar ? 'Solar energy' : 'Grid energy'}
+          </Text>
+        </View>
+      </View>
+
+      {/* Energy Overview */}
+      <View style={styles.energyCard}>
+        <View style={styles.energyRow}>
+          <Ionicons name="flash" size={20} color={COLORS.primary} />
+          <Text style={styles.energyValue}>{stats.total_kwh.toFixed(3)}KWh</Text>
+        </View>
+        <View style={styles.progressContainer}>
+          <Text style={styles.progressLabel}>Solar Power Usage</Text>
+          <View style={styles.progressBarBg}>
+            <View style={[styles.progressBarFill, { width: `${Math.min(stats.usage_percent, 100)}%` }]} />
+          </View>
+          <Text style={styles.progressPercent}>{stats.usage_percent}%</Text>
+        </View>
+      </View>
+
+      {/* Stats Grid */}
+      <View style={styles.statsGrid}>
+        {STATS.map((stat, index) => (
+          <View key={index} style={styles.statCard}>
+            <Ionicons name={stat.icon} size={24} color={stat.color} />
+            <Text style={styles.statLabel}>{stat.label}</Text>
+            <View style={styles.statValueRow}>
+              <Text style={styles.statValue}>{stat.value}</Text>
+              <Text style={styles.statUnit}>{stat.unit}</Text>
+            </View>
+          </View>
+        ))}
+      </View>
+
+      {/* Energy Chart */}
+      <View style={styles.chartSection}>
+        <View style={styles.chartHeader}>
+          <Text style={styles.chartTitle}>Electricity generated by solar</Text>
+          <View style={styles.chartBadge}>
+            <View style={styles.liveDot} />
+            <Text style={styles.liveText}>Live</Text>
+          </View>
+        </View>
+        <View style={styles.chartValueRow}>
+          <Text style={styles.chartValue}>{history.total_generated.toFixed(2)}KWh</Text>
+        </View>
+        <LineChart
+          data={{
+            labels: chartLabels.slice(0, 6),
+            datasets: [{
+              data: chartData.length > 0 ? chartData : [0],
+              color: (opacity = 1) => `rgba(73, 176, 45, ${opacity})`,
+              strokeWidth: 2,
+            }],
+          }}
+          width={screenWidth - 48}
+          height={180}
+          chartConfig={{
+            backgroundColor: COLORS.white,
+            backgroundGradientFrom: COLORS.white,
+            backgroundGradientTo: COLORS.white,
+            decimalPlaces: 0,
+            color: (opacity = 1) => `rgba(73, 176, 45, ${opacity})`,
+            labelColor: () => COLORS.gray,
+            propsForDots: { r: '0' },
+            propsForBackgroundLines: { stroke: COLORS.grayLight, strokeDasharray: '4' },
+          }}
+          bezier
+          withDots={false}
+          withInnerLines={true}
+          withOuterLines={false}
+          style={styles.chart}
+        />
+      </View>
+
+      <View style={{ height: 100 }} />
+    </ScrollView>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: COLORS.background },
+  header: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start',
+    paddingHorizontal: SIZES.paddingLg, paddingTop: 56, paddingBottom: 16, backgroundColor: COLORS.white,
+  },
+  greeting: { fontSize: SIZES.xxl, fontWeight: '700', color: COLORS.text },
+  date: { fontSize: SIZES.sm, color: COLORS.primary, marginTop: 2 },
+  toggleContainer: { alignItems: 'center' },
+  toggleLabel: { fontSize: SIZES.xs, color: COLORS.textSecondary, marginTop: 2 },
+  energyCard: {
+    backgroundColor: COLORS.white, marginHorizontal: SIZES.padding, marginTop: 12,
+    borderRadius: SIZES.radiusLg, padding: SIZES.padding, ...SHADOWS.card,
+  },
+  energyRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
+  energyValue: { fontSize: SIZES.xxl, fontWeight: '700', color: COLORS.text },
+  progressContainer: { gap: 6 },
+  progressLabel: { fontSize: SIZES.sm, color: COLORS.textSecondary },
+  progressBarBg: { height: 8, backgroundColor: COLORS.grayLight, borderRadius: 4 },
+  progressBarFill: { height: 8, backgroundColor: COLORS.primary, borderRadius: 4 },
+  progressPercent: { fontSize: SIZES.xs, color: COLORS.textSecondary, alignSelf: 'flex-end' },
+  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: SIZES.padding, marginTop: 12, gap: 12 },
+  statCard: {
+    width: (screenWidth - 48 - 12) / 2, backgroundColor: COLORS.white,
+    borderRadius: SIZES.radiusLg, padding: SIZES.padding, ...SHADOWS.card,
+  },
+  statLabel: { fontSize: SIZES.sm, color: COLORS.textSecondary, marginTop: 8 },
+  statValueRow: { flexDirection: 'row', alignItems: 'baseline', marginTop: 4 },
+  statValue: { fontSize: SIZES.xxl, fontWeight: '700', color: COLORS.text },
+  statUnit: { fontSize: SIZES.sm, color: COLORS.textSecondary, marginLeft: 4 },
+  chartSection: {
+    backgroundColor: COLORS.white, marginHorizontal: SIZES.padding, marginTop: 12,
+    borderRadius: SIZES.radiusLg, padding: SIZES.padding, ...SHADOWS.card,
+  },
+  chartHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  chartTitle: { fontSize: SIZES.md, color: COLORS.textSecondary },
+  chartBadge: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.primaryLight,
+    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10, gap: 4,
+  },
+  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: COLORS.primary },
+  liveText: { fontSize: SIZES.xs, color: COLORS.primary, fontWeight: '600' },
+  chartValueRow: { marginTop: 4, marginBottom: 8 },
+  chartValue: { fontSize: SIZES.xl, fontWeight: '700', color: COLORS.text },
+  chart: { marginLeft: -16, borderRadius: 8 },
+});
+
+export default DashboardScreen;
