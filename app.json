@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "MaitriGrid",
+    "slug": "maitri-grid",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "platforms": [
+      "ios",
+      "android",
+      "web"
+    ],
+    "icon": "./assets/icon.png",
+    "splash": {
+      "backgroundColor": "#49B02D"
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#49B02D"
+      },
+      "package": "com.anonymous.maitrigrid"
+    },
+    "web": {
+      "bundler": "metro"
+    }
+  }
+}
